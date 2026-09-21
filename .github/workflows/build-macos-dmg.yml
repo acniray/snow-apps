@@ -41,7 +41,6 @@ jobs:
           host: mac
           target: desktop
           arch: clang_64
-          modules: "qtsvg qttools"
           cache: true
 
       - name: Verify toolchain
