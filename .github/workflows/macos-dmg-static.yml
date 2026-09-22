@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - ci/macos-dmg-static
-    paths:
-      - ".github/workflows/macos-dmg-static.yml"
   workflow_dispatch:
 
 permissions:
