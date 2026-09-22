@@ -97,6 +97,14 @@ jobs:
           xcrun clang++ -std=c++20 -mmacosx-version-min=15.0 "$RUNNER_TEMP/stop_token.cpp" -o "$RUNNER_TEMP/stop_token"
           "$RUNNER_TEMP/stop_token"
 
+      - name: Cache static vcpkg install
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tools/macos/installed/static
+            .tools/vcpkg/downloads
+          key: snow-shot-vcpkg-static-arm64-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/vcpkg-overlay-ports/**', 'cmake/vcpkg-overlay-triplets/**') }}
+
       - name: Cache static Qt kit
         uses: actions/cache@v4
         with:
