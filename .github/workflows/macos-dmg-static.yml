@@ -28,7 +28,11 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
           xcrun clang++ --version
-          xcrun --show-sdk-path
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "SDKROOT=$SDKROOT" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
+          echo "Using SDKROOT=$SDKROOT"
+          test -d "$SDKROOT"
 
       - name: Checkout fork
         uses: actions/checkout@v4
@@ -66,6 +70,20 @@ jobs:
           python3 --version
           clang-format --version || xcrun clang-format --version
           rustc --version
+
+      - name: Verify Apple SDK linker visibility
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/sdk-link.c" <<'C'
+          #include <math.h>
+          int main(void) { return (int)cos(0.0); }
+          C
+          CC="$(xcrun --find cc)"
+          echo "CC=$CC"
+          "$CC" -arch arm64 -mmacosx-version-min=15.0 "$RUNNER_TEMP/sdk-link.c" -lm -o "$RUNNER_TEMP/sdk-link"
+          "$RUNNER_TEMP/sdk-link"
+          "$CC" -v -arch arm64 -mmacosx-version-min=15.0 "$RUNNER_TEMP/sdk-link.c" -o "$RUNNER_TEMP/sdk-link-system" 2>&1 | tail -80
+          "$RUNNER_TEMP/sdk-link-system"
 
       - name: Verify C++20 stop_token support
         shell: bash
