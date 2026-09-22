@@ -23,9 +23,21 @@ vcpkg_cmake_configure(
     OPTIONS
         ${FEATURE_OPTIONS}
         -DMZ_FETCH_LIBS=OFF
+        -DMZ_FORCE_FETCH_LIBS=OFF
         -DMZ_LIB_SUFFIX=-ng
         -DMZ_ICONV=OFF
         -DMZ_COMPAT=OFF
+        # The Snow Shot manifest exposes only the zlib feature. Keep the
+        # package deterministic instead of auto-enabling libraries found on
+        # the build host (Homebrew xz/OpenSSL, SDK bzip2/libcompression, etc.).
+        -DMZ_BZIP2=OFF
+        -DMZ_LZMA=OFF
+        -DMZ_ZSTD=OFF
+        -DMZ_LIBCOMP=OFF
+        -DMZ_OPENSSL=OFF
+        -DMZ_LIBBSD=OFF
+        -DMZ_PKCRYPT=OFF
+        -DMZ_WZAES=OFF
     OPTIONS_RELEASE
         -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
     OPTIONS_DEBUG
