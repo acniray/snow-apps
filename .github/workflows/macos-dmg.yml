@@ -37,16 +37,16 @@ jobs:
           host: "mac"
           target: "desktop"
           arch: "clang_64"
-          modules: "qtsvg qttools"
           cache: true
 
       - name: Install macOS build tools
         shell: bash
         run: |
-          brew install cmake ninja pkgconf nasm
+          brew install cmake ninja pkgconf nasm clang-format
           cmake --version
           ninja --version
           pkg-config --version
+          clang-format --version
           rustc --version
 
       - name: Resolve Qt6_DIR
@@ -63,7 +63,16 @@ jobs:
           QT6_DIR="$(dirname "$QT_CONFIG")"
           echo "Qt6_DIR=$QT6_DIR" >> "$GITHUB_ENV"
           echo "Using Qt6_DIR=$QT6_DIR"
-          file "$(dirname "$(dirname "$(dirname "$QT6_DIR")")")/bin/qmake" || true
+          test -f "$QT6_DIR/Qt6Config.cmake"
+          test -d "$(dirname "$QT6_DIR")/Qt6Svg"
+          test -d "$(dirname "$QT6_DIR")/Qt6LinguistTools"
+
+      - name: Preflight generated icon pack
+        shell: bash
+        run: |
+          python3 snow_shot/tools/build_icon_manifest.py
+          python3 ant_design_qt/tools/generate_icon_pack.py             snow_shot/resources/icons.manifest.json             --header snow_shot/include/snow_shot/presentation/components/icons/snowshoticons.h             --source snow_shot/src/presentation/components/icons/snowshoticons.cpp
+          git status --short
 
       - name: Bootstrap Snow Shot macOS dependencies
         shell: bash
@@ -80,7 +89,7 @@ jobs:
         shell: bash
         if: always()
         run: |
-          find build/snow-shot-macos-arm64-release -maxdepth 3 -type f \( -name '*.dmg' -o -name '*.sha256' -o -name '*.app' \) -print 2>/dev/null || true
+          find build/snow-shot-macos-arm64-release -maxdepth 4 -type f \( -name '*.dmg' -o -name '*.sha256' \) -print 2>/dev/null || true
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
