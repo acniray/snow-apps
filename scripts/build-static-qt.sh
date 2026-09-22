@@ -53,12 +53,12 @@ export MACOSX_DEPLOYMENT_TARGET="$qt_deployment_target"
 # even though Apple Command Line Tools provide the compiler and SDK needed by
 # this Ninja build. Keep Qt's SDK checks, but skip only its Xcode-version check
 # when xcodebuild reports that the selected developer directory is CLT-only.
-qt_apple_options=()
+qt_apple_option=''
 if ! xcodebuild -version >/dev/null 2>&1; then
     if ! xcrun --show-sdk-path >/dev/null 2>&1; then
         snow_die 'The selected Apple developer tools do not provide a macOS SDK.'
     fi
-    qt_apple_options+=(-DQT_NO_XCODE_MIN_VERSION_CHECK=ON)
+    qt_apple_option='-DQT_NO_XCODE_MIN_VERSION_CHECK=ON'
     printf 'Full Xcode is unavailable; building Qt with Apple Command Line Tools.\n'
 fi
 
@@ -159,7 +159,7 @@ mkdir -p "$build_dir"
         -DQT_FEATURE_designer=OFF -DQT_FEATURE_pixeltool=OFF \
         -DQT_FEATURE_qdbus=OFF -DQT_FEATURE_qtattributionsscanner=OFF \
         -DQT_FEATURE_qtdiag=OFF -DQT_FEATURE_qtplugininfo=OFF \
-        "${qt_apple_options[@]}"
+        ${qt_apple_option:+"$qt_apple_option"}
 )
 
 cache="$build_dir/CMakeCache.txt"
