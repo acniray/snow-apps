@@ -1,0 +1,93 @@
+name: Build Snow Shot macOS DMG
+
+on:
+  push:
+    branches:
+      - ci/macos-dmg
+    paths:
+      - ".github/workflows/macos-dmg.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-arm64:
+    name: Build macOS arm64 DMG
+    runs-on: macos-15
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Rust 1.97.1
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          target: aarch64-apple-darwin
+          components: rustfmt, clippy
+
+      - name: Install Qt 6.11.1
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.1"
+          host: "mac"
+          target: "desktop"
+          arch: "clang_64"
+          modules: "qtsvg qttools"
+          cache: true
+
+      - name: Install macOS build tools
+        shell: bash
+        run: |
+          brew install cmake ninja pkgconf nasm
+          cmake --version
+          ninja --version
+          pkg-config --version
+          rustc --version
+
+      - name: Resolve Qt6_DIR
+        shell: bash
+        run: |
+          QT_CONFIG="$(find "${QT_ROOT_DIR:-$RUNNER_TEMP}" -path '*/lib/cmake/Qt6/Qt6Config.cmake' -print -quit 2>/dev/null || true)"
+          if [ -z "$QT_CONFIG" ]; then
+            QT_CONFIG="$(find "$RUNNER_TOOL_CACHE" "$HOME" -path '*/lib/cmake/Qt6/Qt6Config.cmake' -print -quit 2>/dev/null || true)"
+          fi
+          if [ -z "$QT_CONFIG" ]; then
+            echo "::error::Qt6Config.cmake not found"
+            exit 1
+          fi
+          QT6_DIR="$(dirname "$QT_CONFIG")"
+          echo "Qt6_DIR=$QT6_DIR" >> "$GITHUB_ENV"
+          echo "Using Qt6_DIR=$QT6_DIR"
+          file "$(dirname "$(dirname "$(dirname "$QT6_DIR")")")/bin/qmake" || true
+
+      - name: Bootstrap Snow Shot macOS dependencies
+        shell: bash
+        run: |
+          chmod +x scripts/*.sh
+          scripts/bootstrap-macos.sh snow-shot-macos-arm64-release
+
+      - name: Build and package DMG
+        shell: bash
+        run: |
+          scripts/package-snow-shot.sh snow-shot-macos-arm64-release
+
+      - name: Show generated packages
+        shell: bash
+        if: always()
+        run: |
+          find build/snow-shot-macos-arm64-release -maxdepth 3 -type f \( -name '*.dmg' -o -name '*.sha256' -o -name '*.app' \) -print 2>/dev/null || true
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: snow-shot-macos-arm64-dmg
+          path: |
+            build/snow-shot-macos-arm64-release/**/*.dmg
+            build/snow-shot-macos-arm64-release/**/*.sha256
+          if-no-files-found: error
+          retention-days: 14
