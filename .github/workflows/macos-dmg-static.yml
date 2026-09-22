@@ -17,7 +17,6 @@ jobs:
 
     env:
       QT_STATIC_PREFIX: ${{ github.workspace }}/.tools/qt/6.11.1/macos-static-arm64
-      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
     steps:
       - name: Select Xcode 26.3
@@ -43,13 +42,6 @@ jobs:
           toolchain: 1.97.1
           target: aarch64-apple-darwin
           components: rustfmt, clippy
-
-      - name: Export GitHub Actions cache service
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Prepare host tools
         shell: bash
@@ -97,16 +89,18 @@ jobs:
           xcrun clang++ -std=c++20 -mmacosx-version-min=15.0 "$RUNNER_TEMP/stop_token.cpp" -o "$RUNNER_TEMP/stop_token"
           "$RUNNER_TEMP/stop_token"
 
-      - name: Cache static vcpkg install
-        uses: actions/cache@v4
+      - name: Restore static vcpkg install
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             .tools/macos/installed/static
             .tools/vcpkg/downloads
           key: snow-shot-vcpkg-static-arm64-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/vcpkg-overlay-ports/**', 'cmake/vcpkg-overlay-triplets/**') }}
 
-      - name: Cache static Qt kit
-        uses: actions/cache@v4
+      - name: Restore static Qt kit
+        id: qt-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.QT_STATIC_PREFIX }}
           key: snow-shot-qt-6.11.1-static-arm64-${{ hashFiles('scripts/build-static-qt.sh', 'cmake/vcpkg-overlay-triplets/arm64-osx-snow-shot-static.cmake', 'vcpkg.json') }}
@@ -117,12 +111,41 @@ jobs:
           chmod +x scripts/*.sh
           scripts/bootstrap-macos.sh snow-shot-macos-arm64-release --skip-qt-validation
 
+      - name: Verify minizip is zlib-only
+        shell: bash
+        run: |
+          TRIPLET_ROOT="$GITHUB_WORKSPACE/.tools/macos/installed/static/arm64-osx-snow-shot-static"
+          CONFIG_DIR="$TRIPLET_ROOT/share/minizip-ng"
+          export PKG_CONFIG_PATH="$TRIPLET_ROOT/lib/pkgconfig"
+          echo "minizip static libs:"
+          pkg-config --libs --static minizip-ng
+          if grep -RniE 'LibLZMA|BZip2|OpenSSL|ZSTD' "$CONFIG_DIR"; then
+            echo "::error::minizip exported an undeclared optional dependency"
+            exit 1
+          fi
+
+      - name: Save static vcpkg install
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .tools/macos/installed/static
+            .tools/vcpkg/downloads
+          key: snow-shot-vcpkg-static-arm64-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/vcpkg-overlay-ports/**', 'cmake/vcpkg-overlay-triplets/**') }}
+
       - name: Build audited static Qt 6.11.1
         shell: bash
         run: |
           scripts/build-static-qt.sh             --arch arm64             --install-prefix "$QT_STATIC_PREFIX"             --parallel 4
           test -f "$QT_STATIC_PREFIX/lib/cmake/Qt6/Qt6Config.cmake"
           test -f "$QT_STATIC_PREFIX/share/snow-apps/static-qt-build.json"
+
+      - name: Save static Qt kit
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.QT_STATIC_PREFIX }}
+          key: snow-shot-qt-6.11.1-static-arm64-${{ hashFiles('scripts/build-static-qt.sh', 'cmake/vcpkg-overlay-triplets/arm64-osx-snow-shot-static.cmake', 'vcpkg.json') }}
 
       - name: Configure static Qt
         shell: bash
@@ -136,10 +159,29 @@ jobs:
           python3 snow_shot/tools/build_icon_manifest.py
           python3 ant_design_qt/tools/generate_icon_pack.py             snow_shot/resources/icons.manifest.json             --header snow_shot/include/snow_shot/presentation/components/icons/snowshoticons.h             --source snow_shot/src/presentation/components/icons/snowshoticons.cpp
 
-      - name: Build and package static DMG
+      - name: Build static Snow Shot
         shell: bash
         run: |
-          scripts/package-snow-shot.sh snow-shot-macos-arm64-release --parallel 4
+          scripts/build.sh snow-shot-macos-arm64-release --clean --target snow_shot --parallel 4
+
+      - name: Verify final binary has no Homebrew dylibs
+        shell: bash
+        run: |
+          APP_BIN="build/snow-shot-macos-arm64-release/snow_shot/snow_shot.app/Contents/MacOS/snow_shot"
+          test -x "$APP_BIN"
+          otool -L "$APP_BIN" | tee "$RUNNER_TEMP/snow-shot-otool.txt"
+          if grep -F '/opt/homebrew/' "$RUNNER_TEMP/snow-shot-otool.txt"; then
+            echo "::error::Static Snow Shot still links a Homebrew dylib"
+            ninja -C build/snow-shot-macos-arm64-release -t commands snow_shot > "$RUNNER_TEMP/snow-shot-link-commands.txt"
+            echo "Relevant link command fragments:"
+            grep -nE '/opt/homebrew|lzma|bz2|ssl|crypto' "$RUNNER_TEMP/snow-shot-link-commands.txt" | tail -100 || true
+            exit 1
+          fi
+
+      - name: Package static DMG
+        shell: bash
+        run: |
+          scripts/package-snow-shot.sh snow-shot-macos-arm64-release --skip-build
 
       - name: Inspect generated package
         shell: bash
